@@ -20,7 +20,7 @@ def main():
 
     # Colors
     WHITE = (255, 255, 255)
-    GRAY_RGBA = (128, 128, 128, 128)
+    DARK_GRAY = (16,16,16)
     GREEN = (0, 255, 0)
     DARK_GREEN = (1, 50, 32)
     MAHOGANY = (192, 64, 0)
@@ -29,6 +29,7 @@ def main():
     GRAY = (128, 128, 128)
     SLATE_GRAY = (47,79,79)
     BLUE = (0, 0, 255)
+    BRICK_RED = (170, 74, 68)
 
     # Generate a seed from system time
     seed = int(time.time())
@@ -38,22 +39,37 @@ def main():
     terrain = {}
     trees = {}
     chests = {}
+    spawners = {}
     chestitems = []
+    enemies=[]
 
     # Screen setup
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption("Terraria-like Game")
     bg = pygame.image.load("images\\bg.jpg")
-    starterswordimg = pygame.image.load("images\\StarterSword.png")
-    endgamestaffimg = pygame.image.load("images\\EndgameStaff.png")
-    lifestealswordimg = pygame.image.load("images\\LifeStealSword.png")
+    
+    starterswordimgraw = pygame.image.load("images\\StarterSword.png")
+    endgamestaffimgraw = pygame.image.load("images\\EndgameStaff.png")
+    lifestealswordimgraw = pygame.image.load("images\\LifeStealSword.png")
+    starterswordimg = pygame.transform.scale(starterswordimgraw, (80,80))
+    endgamestaffimg = pygame.transform.scale(endgamestaffimgraw, (80,80))
+    lifestealswordimg = pygame.transform.scale(lifestealswordimgraw, (80,80))
+
     itemImgList = [starterswordimg,endgamestaffimg,lifestealswordimg]
     chest_opener = False
     moving = True
     playerinvopener = False
-
- 
-
+    selecteditemdmg = 0
+    selecteditemspeed = 0
+    selecteditemrange = 0
+    last_attack_time_player = 0  # Initialize at the start
+    ATTACK_COOLDOWN = 1000
+    swinging = False
+    swing_start_time = 0
+    GRID_SIZE = 100
+    spatial_grid = {}
+    swing_duration = 200 
+    
     # HealthBar class
     class HealthBar:
         def __init__(self, x, y, w, h, max_hp):
@@ -70,7 +86,6 @@ def main():
             pygame.draw.rect(surface, "green", (self.x, self.y, self.w * ratio, self.h))
 
     health_bar = HealthBar(5, 5, 200, 20, 100)
-
     #objects
     class Tree:
         def __init__(self, x, y):
@@ -93,6 +108,17 @@ def main():
         def draw(self, surface, offset_x):
             pygame.draw.rect(surface, LIGHT_BROWN, (self.x - offset_x, self.y - self.height, self.width, self.height))
 
+    class Spawner:
+        def __init__(self, x, y):
+            self.x = x
+            self.y = y
+            self.width = 20
+            self.height = 20
+        
+        def draw(self, surface, offset_x):
+            pygame.draw.rect(surface, DARK_GRAY, (self.x - offset_x, self.y - self.height, self.width, self.height))
+
+
     #items
     class WeaponItem:
         def __init__(self,dmg,speed,attackRange,img):
@@ -108,7 +134,12 @@ def main():
             self.y = y
             self.w = w
             self.h = h
+            self.selecteditemimg = None
+            self.selecteditemdmg = selecteditemdmg
+            self.selecteditemspeed = selecteditemspeed
+            self.selecteditemrange = selecteditemrange         
             self.slot_count = slot_count
+            self.slotindexcounter = 0
             self.slots = []
 
             slot_width = slot_height = 40
@@ -125,28 +156,46 @@ def main():
 
         def hide(self):
             self.visible = False
-        
+
         def drawHotBar(self, h):
-            slotindexcounter = 0
+
             slotcounter = 0
             if not self.visible:
                 pygame.draw.rect(screen, WHITE, (self.x, self.y, self.w, h))
-                for i, slot in enumerate(self.slots):
-                    if i == slotindexcounter:
-                        slot.draw(SLATE_GRAY, screen)  # Highlight the active slot
-                    else:
-                        slot.draw(GRAY, screen)
+                for slot in self.slots:
+                    slot.draw(GRAY, screen)
                     slotcounter += 1
                     if slotcounter == 8:
                         break
+                        
                 for event in pygame.event.get():
                     if event.type == pygame.MOUSEWHEEL:
-                        if event.y > 0 and slotindexcounter <= 7 and not slotindexcounter == 8:  # felfelé görgetés
-                            slotindexcounter += 1
-                            #self.slots[slotindexcounter].draw(SLATE_GRAY, screen)
-                        elif event.y < 0 and slotindexcounter >= 0 and not slotindexcounter == -1:  # lefelé görgetés
-                            slotindexcounter -= 1
-                            #self.slots[slotindexcounter].draw(SLATE_GRAY, screen)
+                        if event.y < 0 and self.slotindexcounter < 7:  # felfelé görgetés
+                            self.slotindexcounter += 1
+                        elif event.y > 0 and self.slotindexcounter > 0:  # lefelé görgetés
+                            self.slotindexcounter -= 1
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        if event.button == 1:
+                            pass
+                # Draw the selected slot highlight
+                selected_slot = self.slots[self.slotindexcounter]
+                highlight_rect = pygame.Rect(selected_slot.x, selected_slot.y, selected_slot.w, selected_slot.h)
+                pygame.draw.rect(screen, SLATE_GRAY, highlight_rect, 3)  # Red color with 3 pixels thickness
+
+                try:
+                    if selected_slot.item is not None:
+                        self.selecteditemimg = selected_slot.item.img
+                        self.selecteditemdmg = selected_slot.item.dmg
+                        self.selecteditemspeed = selected_slot.item.speed
+                        self.selecteditemrange = selected_slot.item.range
+                    elif selected_slot.item is None:
+                        self.selecteditemimg = None
+                        self.selecteditemdmg = 1
+                        self.selecteditemspeed = 1
+                        self.selecteditemrange = 1
+                except Exception as e:
+                    pass
+
 
         def draw(self, screen, dirty_rects):
             if self.visible:
@@ -156,7 +205,7 @@ def main():
                     if slot.y < SCREEN_HEIGHT:  # Csak akkor rajzoljuk ki, ha a slot látható
                         slot.draw(GRAY,screen)
                         dirty_rects.append(pygame.Rect(slot.x, slot.y, slot.w, slot.h))
-        
+
         def add_item(self, item, slot_index):
             if 0 <= slot_index < len(self.slots):
                 self.slots[slot_index].add_item(item)
@@ -196,18 +245,108 @@ def main():
         def remove_item(self):
             self.item = None
 
-    #list
-    #weaponlist = [WeaponItem(10,2,3,"images\\StarterSword.png"),WeaponItem(50,8,20,"images\\EndgameStaff.png"),WeaponItem(20,3,2,"images\\LifeStealSword.png")]
+    #entities
+    class Entity:
+        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed):
+            self.x = x
+            self.y = y
+            self.hp = hp
+            self.dmg = dmg
+            self.w = w
+            self.h = h
+            self.color = color
+            self.attackrange = attackrange
+            self.attackspeed = attackspeed
+            self.movingspeed = movingspeed
+            self.vy = 0
+            self.on_ground = False
 
+        def hitbox(self):
+            return pygame.Rect(self.x-terrain_offset, self.y, self.w, self.h)
 
+        def update(self, player_x):
+            pass
+
+        def draw(self, screen, enemy_offset_x):
+            pass
+
+    class Enemy(Entity):
+        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed):
+            super().__init__(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed)
+            self.vy = 0
+            self.last_attack_time = 0
+
+        def attack(self, player_x, player_y):
+            current_time = pygame.time.get_ticks()
+            if abs(self.x - player_x) < self.attackrange and abs(self.y - player_y) < self.attackrange:
+                if current_time - self.last_attack_time >= self.attackspeed * 1000:
+                    self.last_attack_time = current_time
+                    health_bar.hp -= 7
+                    if health_bar.hp == 0:
+                        exit(0)
+
+        def update(self, player_x):
+            if self.x < player_x - TILE_SIZE:
+                self.x += self.movingspeed
+            elif self.x > player_x + TILE_SIZE:
+                self.x -= self.movingspeed
+            if self.x == (player_x - TILE_SIZE) or self.x == (player_x + TILE_SIZE):
+                self.attack(player_x, player_y)
+
+            self.vy += GRAVITY
+            self.y += self.vy
+
+            on_ground = False
+            for y in range(SCREEN_HEIGHT // TILE_SIZE):
+                for x in range(SCREEN_WIDTH // TILE_SIZE):
+                    tile_x = x + terrain_offset // TILE_SIZE
+                    chunk_x = tile_x // CHUNK_SIZE
+                    tile_index_x = tile_x % CHUNK_SIZE
+                    if chunk_x in terrain and terrain[chunk_x][tile_index_x][y] != 0:
+                        tile_rect = pygame.Rect(tile_x * TILE_SIZE - terrain_offset % TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                        enemy_rect = pygame.Rect(self.x, self.y, self.w, self.h)
+                        if enemy_rect.colliderect(tile_rect):
+                            if self.vy > 0:
+                                self.y = tile_rect.top - self.h
+                                self.vy = 0
+                                on_ground = True
+            if not on_ground:
+                self.on_ground = False
+            else:
+                self.on_ground = True
+
+        def draw(self, screen):
+            pygame.draw.rect(screen, self.color, (self.x - terrain_offset, self.y, self.w, self.h))
+
+       
+    def spawn_enemy():
+        x = random.randint(spawner_x-10*TILE_SIZE,spawner_x+10*TILE_SIZE)
+       
+        y = 0  # Start at the top of the screen
+        hp = 100
+        dmg = 10
+        w = TILE_SIZE
+        h = TILE_SIZE * 2
+        color = BRICK_RED
+        attackrange = 50
+        attackspeed = 1
+        movingspeed = 2
+        new_enemy = Enemy(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed)
+        enemies.append(new_enemy)
+
+    #world generation
     def generate_chunk(chunk_x):
+        global current_height
         chunk = [[0 for _ in range(SCREEN_HEIGHT // TILE_SIZE)] for _ in range(CHUNK_SIZE)]
         tree_list = []
         chest_list = []
+        spawner_list = []
         for x in range(CHUNK_SIZE):
+
             world_x = chunk_x * CHUNK_SIZE + x
             noise_value = noise.noise2(world_x * 0.04, 0.04) # Changed noise2d to noise2
             ground_height = int((noise_value+1) / 2*(SCREEN_HEIGHT // TILE_SIZE - 1))
+        
             for y in range(ground_height, SCREEN_HEIGHT // TILE_SIZE):
                 if y < ground_height + 1:
                     chunk[x][y] = 1  # Grass
@@ -221,23 +360,32 @@ def main():
                 tree_x = world_x * TILE_SIZE
                 tree_y = ground_height * TILE_SIZE
                 tree_list.append(Tree(tree_x, tree_y))
-            if random.random() < 0.005:
+            if random.random() < 0.008:
                 global chest_x,chest_y
                 chest_x = world_x * TILE_SIZE
                 chest_y = ground_height * TILE_SIZE
                 chest_list.append(Chest(chest_x, chest_y))
+            if random.random() < 0.006:
+                global spawner_x,spawner_y
+                spawner_y = ground_height * TILE_SIZE
+                spawner_x =  world_x * TILE_SIZE
+                spawner_list.append(Spawner(spawner_x, spawner_y))
         
         terrain[chunk_x] = chunk
         trees[chunk_x] = tree_list
         chests[chunk_x] = chest_list
+        spawners[chunk_x] = spawner_list
 
     def get_chunk(chunk_x):
         if chunk_x not in terrain:
             generate_chunk(chunk_x)
         return terrain[chunk_x]
 
-    terrain_offset = 0
+    #def for spawning enemies
 
+
+    terrain_offset = 0
+    
     # Player setup
     player_x = SCREEN_WIDTH // 2
     player_y = SCREEN_HEIGHT // 2
@@ -245,14 +393,14 @@ def main():
     on_ground = False
 
     # Initialize inventory
-    invx = 300
-    invy = 350
+    invx = 630
+    invy = 5
     invw = 365
     invh = 185
     slot_count = 32
-    chestinventory = Inventory(invx, invy, invw, invh, slot_count)  # Example instance creation
+    chestinventory = Inventory(invx, invy+300, invw, invh, slot_count)
 
-    playerinventory = Inventory(invx, invy-300, invw, invh, slot_count)
+    playerinventory = Inventory(invx, invy, invw, invh, slot_count)
 
     # Game loop
     running = True
@@ -260,9 +408,13 @@ def main():
     
     active_slot = None
     dragged_item = None
-    
+
+
+
+
     while running:
         dirty_rects = []
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -291,8 +443,7 @@ def main():
         last_visible_chunk = (terrain_offset + SCREEN_WIDTH) // (CHUNK_SIZE * TILE_SIZE)
         for chunk_x in range(first_visible_chunk - 1, last_visible_chunk + 2):
             get_chunk(chunk_x)
-
-        on_ground = False
+                
         if player_y + PLAYER_HEIGHT > SCREEN_HEIGHT:
             player_y = SCREEN_HEIGHT - PLAYER_HEIGHT
             player_vy = 0
@@ -345,19 +496,96 @@ def main():
                     if pygame.mouse.get_pressed()[0] and (pygame.mouse.get_pos()[1] <= chest.y + 1 and pygame.mouse.get_pos()[1] >= chest.y - 17) and (pygame.mouse.get_pos()[0] <= chest_screen_x + 20 and pygame.mouse.get_pos()[0] >= chest_screen_x + 2):
                         chest_opener = True
                         chest_filled = False
+        for chunk_x in range(first_visible_chunk - 1, last_visible_chunk + 2):
+            if chunk_x in spawners:
+                for spawner in spawners[chunk_x]:
+                    spawner.draw(screen, terrain_offset)
 
         pygame.draw.rect(screen, BLUE, (player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT))
         health_bar.draw(screen)
+        
+        if keys[pygame.K_i]:
+            spawn_enemy()
+
+        current_time = pygame.time.get_ticks()
+
+        if keys[pygame.K_i]:
+            spawn_enemy()
+
+        if keys[pygame.K_w] and current_time - last_attack_time_player >= ATTACK_COOLDOWN // playerinventory.selecteditemspeed:
+            try: 
+                    
+                weapon_img = playerinventory.selecteditemimg
+
+                mousex = pygame.mouse.get_pos()[0]
+                if mousex > SCREEN_WIDTH // 2:
+                    try:
+
+                        swinging = True
+                        swing_start_time = current_time
+
+                        rotation_angle = -55  # Adjust this angle to change the swinging animation
+                        rotated_weapon_img = pygame.transform.rotate(weapon_img, rotation_angle)
+
+                        attack_rect = pygame.Rect(player_x, player_y - playerinventory.selecteditemrange * TILE_SIZE, (playerinventory.selecteditemrange * TILE_SIZE) * 2, PLAYER_HEIGHT + (playerinventory.selecteditemrange * TILE_SIZE) * 2)
+                    except Exception:
+                        pass
+                elif mousex < SCREEN_WIDTH // 2:
+                    try:
+                        swinging = True
+                        swing_start_time = current_time
+
+                        rotation_angle = -125  # Adjust this angle to change the swinging animation
+                        mirrored_img = pygame.transform.flip(weapon_img, False, True)
+                        rotated_weapon_img = pygame.transform.rotate(mirrored_img, rotation_angle)
+
+                        attack_rect = pygame.Rect((player_x - (playerinventory.selecteditemrange * TILE_SIZE) * 2) + TILE_SIZE, player_y - playerinventory.selecteditemrange * TILE_SIZE, (playerinventory.selecteditemrange * TILE_SIZE) * 2, PLAYER_HEIGHT + (playerinventory.selecteditemrange * TILE_SIZE) * 2)
+                    except Exception:
+                        pass
+                enemies_to_remove = []
+                for enemy in enemies:
+                    if attack_rect.colliderect(enemy.hitbox()):
+                        enemy.hp -= playerinventory.selecteditemdmg
+                        if (not health_bar.hp >= health_bar.max_hp) and enemy.hp <= 0 and playerinventory.selecteditemdmg == 22:
+                            health_bar.hp += 3
+                        if enemy.hp <= 0:
+                            enemies_to_remove.append(enemy)
+
+                for enemy in enemies_to_remove:
+                    enemies.remove(enemy)
+
+                last_attack_time_player = current_time  # Reset the attack timer
+            except Exception:
+                pass
+        # Handle the swinging animation
+
+        if swinging:
+            try:
+                if current_time - swing_start_time <= swing_duration:
+                    if mousex > SCREEN_WIDTH // 2:
+                        screen.blit(rotated_weapon_img, (SCREEN_WIDTH // 2, player_y - PLAYER_HEIGHT))
+                    elif mousex < SCREEN_WIDTH // 2:
+                        screen.blit(rotated_weapon_img, ((SCREEN_WIDTH // 2)-TILE_SIZE*4.5, player_y - PLAYER_HEIGHT))
+                else:
+                    swinging = False  # End the swinging animation
+            except Exception:
+                pass
+
+        for enemy in enemies:
+            enemy.draw(screen)
+            enemy.update(terrain_offset+SCREEN_WIDTH//2)
+
+
 
         if chest_opener:
             if not chest_filled:
                 for i in range(slot_count):
                     if random.random() < 0.2:
-                        sword = WeaponItem(10, 2, 3, starterswordimg)
+                        sword = WeaponItem(10, 3, 2, starterswordimg)
                     elif random.random() < 0.001:
-                        sword = WeaponItem(50, 8, 20, endgamestaffimg)
+                        sword = WeaponItem(50, 8, 2, endgamestaffimg)
                     elif random.random() < 0.1:
-                        sword = WeaponItem(20, 3, 2, lifestealswordimg)
+                        sword = WeaponItem(22, 3, 3, lifestealswordimg)
                     else:
                         sword = None
                     chestinventory.add_item(sword, i)
@@ -458,13 +686,14 @@ def main():
         #------------------------------------------------------------------------------------------------------------------------------------------
         #------------------------------------------------------------------------------------------------------------------------------------------
         #--------------------------------------------------------------------------------------------------------------------------------------
+        
 
+        
         if playerinvopener == False and chest_opener == False:
-            playerinventory.drawHotBar(invh-135)
+            playerinventory.drawHotBar(50)
+            #print(playerinventory.selecteditemdmg)
 
 
-        if health_bar.hp == 0:
-            exit(0)
 
         pygame.display.flip()
         clock.tick(90)
