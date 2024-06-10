@@ -8,6 +8,8 @@ import cProfile
 def main():
     pygame.init()
 
+    #pygame.display.update(rect_list)
+
     # Constants
     SCREEN_WIDTH = 1000
     SCREEN_HEIGHT = 700
@@ -282,20 +284,28 @@ def main():
                 if current_time - self.last_attack_time >= self.attackspeed * 1000:
                     self.last_attack_time = current_time
                     health_bar.hp -= 7
-                    if health_bar.hp == 0:
+                    if health_bar.hp <= 0:
                         exit(0)
 
-        def update(self, player_x):
+        def update(self,player_x):
             if self.x < player_x - TILE_SIZE:
                 self.x += self.movingspeed
             elif self.x > player_x + TILE_SIZE:
                 self.x -= self.movingspeed
             if self.x == (player_x - TILE_SIZE) or self.x == (player_x + TILE_SIZE):
                 self.attack(player_x, player_y)
-
+            # Apply gravity
             self.vy += GRAVITY
             self.y += self.vy
 
+            # Check for collision with the ground
+            if self.y + self.h > SCREEN_HEIGHT:
+                self.y = SCREEN_HEIGHT - self.h
+                self.vel_y = 0
+                self.on_ground = True
+            else:
+                self.on_ground = False
+            """ 
             on_ground = False
             for y in range(SCREEN_HEIGHT // TILE_SIZE):
                 for x in range(SCREEN_WIDTH // TILE_SIZE):
@@ -314,6 +324,9 @@ def main():
                 self.on_ground = False
             else:
                 self.on_ground = True
+            """
+        def draw(self, screen):
+            pygame.draw.rect(screen, self.color, (self.x - terrain_offset, self.y, self.w, self.h))
 
         def draw(self, screen):
             pygame.draw.rect(screen, self.color, (self.x - terrain_offset, self.y, self.w, self.h))
@@ -575,8 +588,6 @@ def main():
             enemy.draw(screen)
             enemy.update(terrain_offset+SCREEN_WIDTH//2)
 
-
-
         if chest_opener:
             if not chest_filled:
                 for i in range(slot_count):
@@ -697,6 +708,8 @@ def main():
 
         pygame.display.flip()
         clock.tick(90)
+
+
 
     pygame.quit()
 if __name__ == "__main__":
