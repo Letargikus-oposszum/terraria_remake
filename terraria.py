@@ -299,8 +299,8 @@ def main():
             self.y += self.vy
 
             # Check for collision with the ground
-            if self.y + self.h > SCREEN_HEIGHT:
-                self.y = SCREEN_HEIGHT - self.h
+            if self.y + self.h > (player_y+PLAYER_HEIGHT):
+                self.y = (player_y+PLAYER_HEIGHT) - self.h
                 self.vel_y = 0
                 self.on_ground = True
             else:
