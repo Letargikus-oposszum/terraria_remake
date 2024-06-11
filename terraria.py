@@ -44,15 +44,18 @@ def main():
     spawners = {}
     chestitems = []
     enemies=[]
+    
 
     # Screen setup
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption("Terraria-like Game")
-    bg = pygame.image.load("images\\bg.jpg")
+    bg = pygame.image.load("images\\bg.png")
     
     starterswordimgraw = pygame.image.load("images\\StarterSword.png")
     endgamestaffimgraw = pygame.image.load("images\\EndgameStaff.png")
     lifestealswordimgraw = pygame.image.load("images\\LifeStealSword.png")
+    enemyRaw = pygame.image.load("images\\spider.png")
+    enemyimg = pygame.transform.scale(enemyRaw,(80,80))
     starterswordimg = pygame.transform.scale(starterswordimgraw, (80,80))
     endgamestaffimg = pygame.transform.scale(endgamestaffimgraw, (80,80))
     lifestealswordimg = pygame.transform.scale(lifestealswordimgraw, (80,80))
@@ -68,6 +71,7 @@ def main():
     ATTACK_COOLDOWN = 1000
     swinging = False
     swing_start_time = 0
+    enemy_counter = 0
     GRID_SIZE = 100
     spatial_grid = {}
     swing_duration = 200 
@@ -116,9 +120,13 @@ def main():
             self.y = y
             self.width = 20
             self.height = 20
-        
+
         def draw(self, surface, offset_x):
             pygame.draw.rect(surface, DARK_GRAY, (self.x - offset_x, self.y - self.height, self.width, self.height))
+
+        def hitbox(self):
+            return pygame.Rect((self.x-terrain_offset)-TILE_SIZE*3, self.y-TILE_SIZE*3, self.width+TILE_SIZE*6, self.height+TILE_SIZE*6)
+
 
 
     #items
@@ -261,10 +269,12 @@ def main():
             self.attackspeed = attackspeed
             self.movingspeed = movingspeed
             self.vy = 0
+            self.image = enemyimg
+            self.direction = ""
             self.on_ground = False
 
         def hitbox(self):
-            return pygame.Rect(self.x-terrain_offset, self.y, self.w, self.h)
+            return pygame.Rect(self.x-terrain_offset, self.y, self.w*2, self.h)
 
         def update(self, player_x):
             pass
@@ -290,8 +300,10 @@ def main():
         def update(self,player_x):
             if self.x < player_x - TILE_SIZE:
                 self.x += self.movingspeed
+                self.direction = "right"
             elif self.x > player_x + TILE_SIZE:
                 self.x -= self.movingspeed
+                self.direction = "left"
             if self.x == (player_x - TILE_SIZE) or self.x == (player_x + TILE_SIZE):
                 self.attack(player_x, player_y)
             # Apply gravity
@@ -326,12 +338,15 @@ def main():
                 self.on_ground = True
             """
         def draw(self, screen):
-            pygame.draw.rect(screen, self.color, (self.x - terrain_offset, self.y, self.w, self.h))
+                rotated_image = self.image
+                if self.direction == "right":
+                    rotated_image = pygame.transform.rotate(self.image, -90)
+                elif self.direction == "left":
+                    rotated_image = pygame.transform.rotate(self.image, 90)
+                
+                screen.blit(rotated_image, ((self.x - terrain_offset)-TILE_SIZE*2, self.y-TILE_SIZE))       
 
-        def draw(self, screen):
-            pygame.draw.rect(screen, self.color, (self.x - terrain_offset, self.y, self.w, self.h))
 
-       
     def spawn_enemy():
         x = random.randint(spawner_x-10*TILE_SIZE,spawner_x+10*TILE_SIZE)
        
@@ -349,7 +364,7 @@ def main():
 
     #world generation
     def generate_chunk(chunk_x):
-        global current_height
+        global spawner_rect
         chunk = [[0 for _ in range(SCREEN_HEIGHT // TILE_SIZE)] for _ in range(CHUNK_SIZE)]
         tree_list = []
         chest_list = []
@@ -394,6 +409,8 @@ def main():
             generate_chunk(chunk_x)
         return terrain[chunk_x]
 
+
+
     #def for spawning enemies
 
 
@@ -427,22 +444,22 @@ def main():
 
     while running:
         dirty_rects = []
-
+        player_rect = pygame.Rect(player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT] or keys[pygame.K_a] and moving:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a] and moving == True:
             terrain_offset -= 4
 
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d] and moving:
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d] and moving == True:
             terrain_offset += 4
         
-        if keys[pygame.K_LEFT] or keys[pygame.K_a] and keys[pygame.K_LSHIFT] and moving:
+        if keys[pygame.K_LEFT] or keys[pygame.K_a] and keys[pygame.K_LSHIFT] and moving == True:
             terrain_offset -= 5
         
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d] and keys[pygame.K_LSHIFT] and moving:
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d] and keys[pygame.K_LSHIFT] and moving == True:
             terrain_offset += 5
 
         if keys[pygame.K_SPACE] and on_ground:
@@ -469,7 +486,6 @@ def main():
                     tile_index_x = tile_x % CHUNK_SIZE
                     if chunk_x in terrain and terrain[chunk_x][tile_index_x][y] != 0:
                         tile_rect = pygame.Rect(tile_x * TILE_SIZE - terrain_offset, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                        player_rect = pygame.Rect(player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT)
                         if player_rect.colliderect(tile_rect):
                             if player_vy > 0:
                                 player_y = tile_rect.top - PLAYER_HEIGHT
@@ -516,14 +532,19 @@ def main():
 
         pygame.draw.rect(screen, BLUE, (player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT))
         health_bar.draw(screen)
-        
-        if keys[pygame.K_i]:
-            spawn_enemy()
+
+        for chunk_x in range(first_visible_chunk - 1, last_visible_chunk + 2):
+                if chunk_x in spawners:
+                    for spawner in spawners[chunk_x]:
+                        spawner.draw(screen, terrain_offset)
+                        spawner_hitbox = spawner.hitbox()
+                        if player_rect.colliderect(spawner_hitbox) and enemy_counter <= 10:
+                            enemy_counter += 1
+                            spawn_enemy()
 
         current_time = pygame.time.get_ticks()
 
-        if keys[pygame.K_i]:
-            spawn_enemy()
+   
 
         if keys[pygame.K_w] and current_time - last_attack_time_player >= ATTACK_COOLDOWN // playerinventory.selecteditemspeed:
             try: 
@@ -562,6 +583,7 @@ def main():
                         if (not health_bar.hp >= health_bar.max_hp) and enemy.hp <= 0 and playerinventory.selecteditemdmg == 22:
                             health_bar.hp += 3
                         if enemy.hp <= 0:
+                            enemy_counter -= 1
                             enemies_to_remove.append(enemy)
 
                 for enemy in enemies_to_remove:
