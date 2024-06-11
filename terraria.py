@@ -257,7 +257,7 @@ def main():
 
     #entities
     class Entity:
-        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed):
+        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed,image):
             self.x = x
             self.y = y
             self.hp = hp
@@ -269,7 +269,7 @@ def main():
             self.attackspeed = attackspeed
             self.movingspeed = movingspeed
             self.vy = 0
-            self.image = enemyimg
+            self.image = image
             self.direction = ""
             self.on_ground = False
 
@@ -283,8 +283,8 @@ def main():
             pass
 
     class Enemy(Entity):
-        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed):
-            super().__init__(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed)
+        def __init__(self, x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed,image):
+            super().__init__(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed,image)
             self.vy = 0
             self.last_attack_time = 0
 
@@ -351,15 +351,24 @@ def main():
         x = random.randint(spawner_x-10*TILE_SIZE,spawner_x+10*TILE_SIZE)
        
         y = 0  # Start at the top of the screen
-        hp = 100
-        dmg = 10
-        w = TILE_SIZE
-        h = TILE_SIZE * 2
+        if enemy_counter == 10:
+            hp = 700
+            w = (TILE_SIZE*2)*2
+            h = (TILE_SIZE * 2)*2
+            enemyimgg = pygame.transform.scale(enemyRaw,(160,160))
+            dmg = 35
+        else:
+            hp = 100
+            w = TILE_SIZE
+            h = TILE_SIZE * 2
+            enemyimgg = enemyimg
+            dmg = 7
+       
         color = BRICK_RED
         attackrange = 50
         attackspeed = 1
         movingspeed = 2
-        new_enemy = Enemy(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed)
+        new_enemy = Enemy(x, y, hp, dmg, w, h, color, attackrange, attackspeed, movingspeed,enemyimgg)
         enemies.append(new_enemy)
 
     #world generation
